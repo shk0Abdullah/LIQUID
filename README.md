@@ -1,2 +1,2 @@
 # mimi
-AI and IS project 
+AI and IS project.
