@@ -1,2 +1,5 @@
-# mimi
-AI and IS project.
+# LIQ
+Consensus using RL
+
+
+Would update the key research structure here ..
