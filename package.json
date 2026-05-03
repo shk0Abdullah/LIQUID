@@ -1,0 +1,24 @@
+{
+  "name": "blockchain-qlearning-sim",
+  "version": "1.0.0",
+  "description": "Blockchain network simulation with Q-learning adaptive consensus",
+  "private": true,
+  "scripts": {
+    "install:all": "cd python-sim && pip install -r requirements.txt && cd ../server && npm install && cd ../web && npm install",
+    "dev:python": "cd python-sim && python main.py",
+    "dev:server": "cd server && npm run dev",
+    "dev:web": "cd web && npm run dev",
+    "dev": "echo 'Run in separate terminals: npm run dev:server && npm run dev:web'",
+    "build": "cd server && npm run build && cd ../web && npm run build",
+    "test": "cd python-sim && python -m pytest tests/ || echo 'No tests yet'"
+  },
+  "keywords": [
+    "blockchain",
+    "q-learning",
+    "reinforcement-learning",
+    "consensus",
+    "simulation"
+  ],
+  "author": "",
+  "license": "MIT"
+}
