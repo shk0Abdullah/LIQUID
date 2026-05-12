@@ -6,6 +6,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./block": "./src/block.ts",
+    "./blockchain": "./src/blockchain.ts",
     "./transaction": "./src/transaction.ts"
   },
   "scripts": {
