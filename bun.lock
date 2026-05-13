@@ -20,6 +20,13 @@
         "typescript": "5.9.2",
       },
     },
+    "packages/node-api": {
+      "name": "@liquid/node-api",
+      "version": "0.0.0",
+      "dependencies": {
+        "@liquid/blockchain": "workspace:*",
+      },
+    },
     "packages/shared": {
       "name": "@liquid/shared",
       "version": "0.0.0",
@@ -30,6 +37,8 @@
   },
   "packages": {
     "@liquid/blockchain": ["@liquid/blockchain@workspace:packages/blockchain"],
+
+    "@liquid/node-api": ["@liquid/node-api@workspace:packages/node-api"],
 
     "@liquid/shared": ["@liquid/shared@workspace:packages/shared"],
 

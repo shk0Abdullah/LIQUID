@@ -39,7 +39,7 @@ export class Blockchain {
     return blockchain;
   }
 
-  public getLatestBlock(): Block {
+  public getLatestBlock(): Block {                                        
     const latest = this.chain.at(-1);
     if (!latest) {
       throw new Error("Blockchain is not initialized");
@@ -54,6 +54,18 @@ export class Blockchain {
     }
 
     this.pendingTransactions.push(transaction);
+  }
+
+  public setDifficulty(difficulty: number): void {
+    if (!Number.isInteger(difficulty) || difficulty < 1) {
+      throw new Error("Difficulty must be an integer >= 1");
+    }
+
+    this.config.difficulty = difficulty;
+  }
+
+  public getPendingTransactionCount(): number {
+    return this.pendingTransactions.length;
   }
 
   public async minePendingTransactions(minerAddress: string): Promise<Block> {
