@@ -47,7 +47,9 @@ function toCanonicalBlockPayload(block: Block): string {
 }
 
 function bytesToHex(bytes: Uint8Array): string {
-  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join(
+    "",
+  );
 }
 
 export async function calculateBlockHash(block: Block): Promise<string> {
@@ -106,6 +108,11 @@ export async function mineBlock(
     }
 
     nonce += 1;
+
+    // Yield control every 100 iterations to prevent blocking the event loop
+    if (iterations % 100 === 0) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
   }
 }
 

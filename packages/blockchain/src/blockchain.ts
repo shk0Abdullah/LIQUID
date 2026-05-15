@@ -23,6 +23,7 @@ export class Blockchain {
   public readonly chain: Block[] = [];
   public readonly pendingTransactions: Transaction[] = [];
   public readonly config: BlockchainConfig;
+  private maxTransactionsPerBlock: number = MAX_TRANSACTIONS_PER_BLOCK;
 
   private constructor(config?: Partial<BlockchainConfig>) {
     this.config = {
@@ -68,13 +69,21 @@ export class Blockchain {
     return this.pendingTransactions.length;
   }
 
+  public setMaxTransactionsPerBlock(limit: number): void {
+    if (!Number.isInteger(limit) || limit < 1) {
+      throw new Error("Max transactions per block must be an integer >= 1");
+    }
+
+    this.maxTransactionsPerBlock = limit;
+  }
+
   public async minePendingTransactions(minerAddress: string): Promise<Block> {
     if (typeof minerAddress !== "string" || minerAddress.trim() === "") {
       throw new Error("Miner address must be a non-empty string");
     }
 
     const rewardTransaction = createTransaction("SYSTEM", minerAddress, this.config.miningReward);
-    const maxPendingTransactions = Math.max(0, MAX_TRANSACTIONS_PER_BLOCK - 1);
+    const maxPendingTransactions = Math.max(0, this.maxTransactionsPerBlock - 1);
     const selectedPendingTransactions = this.pendingTransactions.slice(0, maxPendingTransactions);
     const blockTransactions = [rewardTransaction, ...selectedPendingTransactions];
 

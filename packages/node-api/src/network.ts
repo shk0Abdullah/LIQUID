@@ -34,10 +34,16 @@ export class BlockchainNetwork {
   }
 
   public listNodes(): NodeInfo[] {
-    return Array.from(this.nodes.entries()).map(([id, chain]) => this.toNodeInfo(id, chain));
+    return Array.from(this.nodes.entries()).map(([id, chain]) =>
+      this.toNodeInfo(id, chain),
+    );
   }
 
-  public submitTransaction(from: string, to: string, amount: number): { txId: string } {
+  public submitTransaction(
+    from: string,
+    to: string,
+    amount: number,
+  ): { txId: string } {
     const tx = createTransaction(from, to, amount);
     for (const chain of this.nodes.values()) {
       chain.addTransaction(tx);
@@ -46,7 +52,10 @@ export class BlockchainNetwork {
     return { txId: tx.id };
   }
 
-  public async mine(nodeId: string, minerAddress: string): Promise<{
+  public async mine(
+    nodeId: string,
+    minerAddress: string,
+  ): Promise<{
     nodeId: string;
     height: number;
     hash: string;
@@ -58,6 +67,22 @@ export class BlockchainNetwork {
     }
 
     const block = await node.minePendingTransactions(minerAddress);
+
+    // Broadcast mined block to all other nodes in the network
+    for (const [otherNodeId, otherNode] of this.nodes) {
+      if (otherNodeId !== nodeId) {
+        // Add block to other node's chain
+        otherNode.chain.push(block);
+        // Remove transactions that were included in the block from other node's mempool
+        const txIdsInBlock = new Set(block.transactions.map((tx) => tx.id));
+        const remainingPending = otherNode.pendingTransactions.filter(
+          (tx) => !txIdsInBlock.has(tx.id),
+        );
+        otherNode.pendingTransactions.length = 0;
+        otherNode.pendingTransactions.push(...remainingPending);
+      }
+    }
+
     return {
       nodeId,
       height: node.chain.length,
@@ -72,6 +97,12 @@ export class BlockchainNetwork {
     }
   }
 
+  public setMaxTransactionsPerBlockForAll(limit: number): void {
+    for (const node of this.nodes.values()) {
+      node.setMaxTransactionsPerBlock(limit);
+    }
+  }
+
   public getState(): {
     nodeCount: number;
     nodes: NodeInfo[];
@@ -79,8 +110,14 @@ export class BlockchainNetwork {
     avgPendingTxCount: number;
   } {
     const nodes = this.listNodes();
-    const maxHeight = nodes.reduce((acc, node) => Math.max(acc, node.height), 0);
-    const totalPending = nodes.reduce((acc, node) => acc + node.pendingTxCount, 0);
+    const maxHeight = nodes.reduce(
+      (acc, node) => Math.max(acc, node.height),
+      0,
+    );
+    const totalPending = nodes.reduce(
+      (acc, node) => acc + node.pendingTxCount,
+      0,
+    );
 
     return {
       nodeCount: nodes.length,
@@ -97,6 +134,15 @@ export class BlockchainNetwork {
     }
 
     return node.chain;
+  }
+
+  public getNodeInfo(nodeId: string): NodeInfo {
+    const node = this.nodes.get(nodeId);
+    if (!node) {
+      throw new Error(`Node not found: ${nodeId}`);
+    }
+
+    return this.toNodeInfo(nodeId, node);
   }
 
   private toNodeInfo(id: string, chain: Blockchain): NodeInfo {

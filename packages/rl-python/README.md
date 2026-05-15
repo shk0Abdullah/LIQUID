@@ -17,5 +17,10 @@ python train_q_learning.py
 ```
 
 The script uses:
-- `POST /rl/reset`
-- `POST /rl/step`
+- `POST /rl/reset` (returns simplified state)
+- `POST /rl/step` with adaptive action fields:
+  - `difficulty`
+  - `maxTxsPerBlock`
+  - `gossipFanout`
+  - `mineIntervalMs`
+  - `incomingTxs`
