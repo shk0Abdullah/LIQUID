@@ -34,16 +34,42 @@
         "typescript": "5.9.2",
       },
     },
+    "packages/network": {
+      "name": "@liquid/network",
+      "version": "0.0.0",
+      "dependencies": {
+        "@liquid/blockchain": "workspace:*",
+        "@liquid/shared": "workspace:*",
+      },
+      "devDependencies": {
+        "typescript": "5.9.2",
+      },
+    },
     "packages/node-api": {
       "name": "@liquid/node-api",
       "version": "0.0.0",
       "dependencies": {
         "@liquid/blockchain": "workspace:*",
+        "@liquid/network": "workspace:*",
+        "@liquid/shared": "workspace:*",
+        "@liquid/simulation": "workspace:*",
       },
     },
     "packages/shared": {
       "name": "@liquid/shared",
       "version": "0.0.0",
+      "devDependencies": {
+        "typescript": "5.9.2",
+      },
+    },
+    "packages/simulation": {
+      "name": "@liquid/simulation",
+      "version": "0.0.0",
+      "dependencies": {
+        "@liquid/blockchain": "workspace:*",
+        "@liquid/network": "workspace:*",
+        "@liquid/shared": "workspace:*",
+      },
       "devDependencies": {
         "typescript": "5.9.2",
       },
@@ -116,9 +142,13 @@
 
     "@liquid/blockchain": ["@liquid/blockchain@workspace:packages/blockchain"],
 
+    "@liquid/network": ["@liquid/network@workspace:packages/network"],
+
     "@liquid/node-api": ["@liquid/node-api@workspace:packages/node-api"],
 
     "@liquid/shared": ["@liquid/shared@workspace:packages/shared"],
+
+    "@liquid/simulation": ["@liquid/simulation@workspace:packages/simulation"],
 
     "@polka/url": ["@polka/url@1.0.0-next.29", "", {}, "sha512-wwQAWhWSuHaag8c4q/KN/vCoeOJYshAIvMQwD4GpSb3OiZklFfvAgmj0VCBBImRpuF/aFgIRzllXlVX93Jevww=="],
 

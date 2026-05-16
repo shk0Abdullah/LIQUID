@@ -1,0 +1,22 @@
+{
+  "name": "@liquid/network",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./gossip": "./src/gossip.ts",
+    "./node": "./src/node.ts",
+    "./message": "./src/message.ts"
+  },
+  "scripts": {
+    "check-types": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@liquid/shared": "workspace:*",
+    "@liquid/blockchain": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "5.9.2"
+  }
+}

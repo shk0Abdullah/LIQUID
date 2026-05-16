@@ -1,4 +1,6 @@
-import { Blockchain, createTransaction } from "../../blockchain/src/index.ts";
+import { GossipProtocol, NetworkNode } from "@liquid/network";
+import { Blockchain } from "@liquid/blockchain";
+import type { Block } from "@liquid/shared";
 
 export interface NodeInfo {
   id: string;
@@ -6,50 +8,117 @@ export interface NodeInfo {
   pendingTxCount: number;
   difficulty: number;
   latestHash: string;
+  neighborCount: number;
+  neighbors: string[];
 }
 
-export class BlockchainNetwork {
-  private nodes = new Map<string, Blockchain>();
+export interface GossipNetworkConfig {
+  fanoutSize: number;
+  broadcastSubsetSize1: number;
+  broadcastSubsetSize2: number;
+  useSubsets: boolean;
+  maxNeighbors: number;
+}
 
-  public static async create(nodeCount = 3): Promise<BlockchainNetwork> {
-    const network = new BlockchainNetwork();
+export const DEFAULT_GOSSIP_NETWORK_CONFIG: GossipNetworkConfig = {
+  fanoutSize: 2,
+  broadcastSubsetSize1: 2,
+  broadcastSubsetSize2: 2,
+  useSubsets: true,
+  maxNeighbors: 5,
+};
+
+export class BlockchainNetwork {
+  private nodes = new Map<string, NetworkNode>();
+  private gossip: GossipProtocol;
+  private config: GossipNetworkConfig;
+
+  constructor(config: Partial<GossipNetworkConfig> = {}) {
+    this.config = { ...DEFAULT_GOSSIP_NETWORK_CONFIG, ...config };
+    this.gossip = new GossipProtocol({
+      fanoutSize: this.config.fanoutSize,
+      maxNeighbors: this.config.maxNeighbors,
+    });
+  }
+
+  public static async create(
+    nodeCount = 3,
+    config: Partial<GossipNetworkConfig> = {},
+  ): Promise<BlockchainNetwork> {
+    const network = new BlockchainNetwork(config);
     await network.reset(nodeCount);
     return network;
   }
 
   public async reset(nodeCount = 3): Promise<void> {
+    // Unregister all existing nodes
+    for (const node of this.nodes.values()) {
+      node.unregister();
+    }
     this.nodes.clear();
+    this.gossip.reset();
+
+    // Create new gossip protocol
+    this.gossip = new GossipProtocol({
+      fanoutSize: this.config.fanoutSize,
+      maxNeighbors: this.config.maxNeighbors,
+    });
+
+    // Create and register nodes
     for (let i = 0; i < nodeCount; i += 1) {
       const id = `node-${i + 1}`;
-      const chain = await Blockchain.create();
-      this.nodes.set(id, chain);
+      const node = await NetworkNode.create(id, this.gossip, {
+        fanoutSize: this.config.fanoutSize,
+        broadcastSubsetSize1: this.config.broadcastSubsetSize1,
+        broadcastSubsetSize2: this.config.broadcastSubsetSize2,
+        useSubsets: this.config.useSubsets,
+      });
+      node.register();
+      this.nodes.set(id, node);
+    }
+
+    // Ensure all nodes have neighbors by triggering discovery
+    for (const node of this.nodes.values()) {
+      node.discoverNeighbors();
     }
   }
 
   public async addNode(): Promise<NodeInfo> {
     const id = `node-${this.nodes.size + 1}`;
-    const chain = await Blockchain.create();
-    this.nodes.set(id, chain);
-    return this.toNodeInfo(id, chain);
+    const node = await NetworkNode.create(id, this.gossip, {
+      fanoutSize: this.config.fanoutSize,
+      broadcastSubsetSize1: this.config.broadcastSubsetSize1,
+      broadcastSubsetSize2: this.config.broadcastSubsetSize2,
+      useSubsets: this.config.useSubsets,
+    });
+    node.register();
+    this.nodes.set(id, node);
+
+    // Trigger neighbor discovery for this new node
+    node.discoverNeighbors();
+
+    return this.toNodeInfo(node);
   }
 
   public listNodes(): NodeInfo[] {
-    return Array.from(this.nodes.entries()).map(([id, chain]) =>
-      this.toNodeInfo(id, chain),
-    );
+    return Array.from(this.nodes.values()).map((node) => this.toNodeInfo(node));
   }
 
   public submitTransaction(
     from: string,
     to: string,
     amount: number,
-  ): { txId: string } {
-    const tx = createTransaction(from, to, amount);
-    for (const chain of this.nodes.values()) {
-      chain.addTransaction(tx);
+  ): { txId: string; messageId: string } {
+    // Pick a random node to submit the transaction
+    const nodeIds = Array.from(this.nodes.keys());
+    const randomNodeId = nodeIds[Math.floor(Math.random() * nodeIds.length)];
+    const node = this.nodes.get(randomNodeId);
+
+    if (!node) {
+      throw new Error("No nodes available in the network");
     }
 
-    return { txId: tx.id };
+    return node.submitTransaction(from, to, amount);
   }
 
   public async mine(
@@ -60,34 +129,18 @@ export class BlockchainNetwork {
     height: number;
     hash: string;
     pendingTxCount: number;
+    messageId: string;
   }> {
     const node = this.nodes.get(nodeId);
     if (!node) {
       throw new Error(`Node not found: ${nodeId}`);
     }
 
-    const block = await node.minePendingTransactions(minerAddress);
-
-    // Broadcast mined block to all other nodes in the network
-    for (const [otherNodeId, otherNode] of this.nodes) {
-      if (otherNodeId !== nodeId) {
-        // Add block to other node's chain
-        otherNode.chain.push(block);
-        // Remove transactions that were included in the block from other node's mempool
-        const txIdsInBlock = new Set(block.transactions.map((tx) => tx.id));
-        const remainingPending = otherNode.pendingTransactions.filter(
-          (tx) => !txIdsInBlock.has(tx.id),
-        );
-        otherNode.pendingTransactions.length = 0;
-        otherNode.pendingTransactions.push(...remainingPending);
-      }
-    }
+    const result = await node.mine(minerAddress);
 
     return {
       nodeId,
-      height: node.chain.length,
-      hash: block.hash,
-      pendingTxCount: node.getPendingTransactionCount(),
+      ...result,
     };
   }
 
@@ -108,6 +161,11 @@ export class BlockchainNetwork {
     nodes: NodeInfo[];
     maxHeight: number;
     avgPendingTxCount: number;
+    networkTopology: {
+      nodeId: string;
+      neighborCount: number;
+      neighbors: string[];
+    }[];
   } {
     const nodes = this.listNodes();
     const maxHeight = nodes.reduce(
@@ -124,16 +182,17 @@ export class BlockchainNetwork {
       nodes,
       maxHeight,
       avgPendingTxCount: nodes.length === 0 ? 0 : totalPending / nodes.length,
+      networkTopology: this.gossip.getNetworkTopology(),
     };
   }
 
-  public getNodeChain(nodeId: string) {
+  public getNodeChain(nodeId: string): Block[] {
     const node = this.nodes.get(nodeId);
     if (!node) {
       throw new Error(`Node not found: ${nodeId}`);
     }
 
-    return node.chain;
+    return node.blockchain.chain;
   }
 
   public getNodeInfo(nodeId: string): NodeInfo {
@@ -142,16 +201,33 @@ export class BlockchainNetwork {
       throw new Error(`Node not found: ${nodeId}`);
     }
 
-    return this.toNodeInfo(nodeId, node);
+    return this.toNodeInfo(node);
   }
 
-  private toNodeInfo(id: string, chain: Blockchain): NodeInfo {
+  public getNetworkTopology(): {
+    nodeId: string;
+    neighborCount: number;
+    neighbors: string[];
+  }[] {
+    return this.gossip.getNetworkTopology();
+  }
+
+  public triggerNeighborDiscovery(): void {
+    for (const node of this.nodes.values()) {
+      node.discoverNeighbors();
+    }
+  }
+
+  private toNodeInfo(node: NetworkNode): NodeInfo {
+    const info = node.getInfo();
     return {
-      id,
-      height: chain.chain.length,
-      pendingTxCount: chain.getPendingTransactionCount(),
-      difficulty: chain.config.difficulty,
-      latestHash: chain.getLatestBlock().hash,
+      id: info.id,
+      height: info.height,
+      pendingTxCount: info.pendingTxCount,
+      difficulty: info.difficulty,
+      latestHash: info.latestHash,
+      neighborCount: info.neighborCount,
+      neighbors: info.neighbors,
     };
   }
 }

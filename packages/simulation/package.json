@@ -1,0 +1,23 @@
+{
+  "name": "@liquid/simulation",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./runner": "./src/runner.ts",
+    "./scenarios": "./src/scenarios/index.ts",
+    "./generators": "./src/generators/index.ts"
+  },
+  "scripts": {
+    "check-types": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@liquid/shared": "workspace:*",
+    "@liquid/blockchain": "workspace:*",
+    "@liquid/network": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "5.9.2"
+  }
+}

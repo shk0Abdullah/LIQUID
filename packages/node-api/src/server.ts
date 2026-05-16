@@ -126,6 +126,21 @@ Bun.serve({
       }
     }
 
+    if (request.method === "GET" && pathname === "/network/topology") {
+      return json({
+        topology: network.getNetworkTopology(),
+        nodeCount: network.listNodes().length,
+      });
+    }
+
+    if (request.method === "POST" && pathname === "/network/discover") {
+      network.triggerNeighborDiscovery();
+      return json({
+        topology: network.getNetworkTopology(),
+        message: "Neighbor discovery triggered for all nodes",
+      });
+    }
+
     if (request.method === "POST" && pathname === "/rl/reset") {
       const body = await readJson(request);
       const nodeCount = Number(body.nodeCount ?? 3);

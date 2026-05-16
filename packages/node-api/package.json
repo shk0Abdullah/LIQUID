@@ -7,6 +7,9 @@
     "dev": "bun run src/server.ts"
   },
   "dependencies": {
-    "@liquid/blockchain": "workspace:*"
+    "@liquid/blockchain": "workspace:*",
+    "@liquid/network": "workspace:*",
+    "@liquid/shared": "workspace:*",
+    "@liquid/simulation": "workspace:*"
   }
 }
