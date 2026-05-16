@@ -1,6 +1,5 @@
 <script lang="ts">
   import { shortHash, formatNumber, timeAgo } from "$lib/api";
-  import { fade, slide } from 'svelte/transition';
   
   export let data: {
     nodeId: string;
@@ -8,108 +7,98 @@
     latestBlocks: any[];
     latestTx: any[];
   };
-  
-  const stats = [
-    { 
-      label: "Latest Block", 
-      value: data.latestBlocks.length > 0 ? `#${data.latestBlocks[0].index}` : "-",
-      sub: data.latestBlocks.length > 0 ? timeAgo(data.latestBlocks[0].timestamp) : "",
-      icon: "📦",
-      color: "blue"
-    },
-    { 
-      label: "Active Nodes", 
-      value: data.nodes.length.toString(),
-      sub: "In sync",
-      icon: "🖥️",
-      color: "green"
-    },
-    { 
-      label: "Total Transactions", 
-      value: formatNumber(data.latestTx.length),
-      sub: "Confirmed",
-      icon: "💸",
-      color: "purple"
-    },
-    { 
-      label: "Network Status", 
-      value: "Online",
-      sub: "Healthy",
-      icon: "✅",
-      color: "cyan"
-    },
-  ];
 </script>
 
-<div class="dashboard">
+<div class="page">
   <header class="page-header">
-    <div class="header-content">
-      <h1>Dashboard</h1>
-      <p class="subtitle">Real-time blockchain network overview</p>
-    </div>
-    <div class="node-badge">
+    <h1>Dashboard</h1>
+    <div class="node-info">
       <span class="label">Active Node</span>
-      <span class="value mono">{data.nodeId}</span>
+      <span class="value">{data.nodeId}</span>
     </div>
   </header>
 
-  <section class="stats-grid" in:fade={{ duration: 300 }}>
-    {#each stats as stat, i}
-      <div class="stat-card {stat.color}" style="animation-delay: {i * 100}ms">
-        <div class="stat-icon">{stat.icon}</div>
-        <div class="stat-content">
-          <div class="stat-label">{stat.label}</div>
-          <div class="stat-value">{stat.value}</div>
-          {#if stat.sub}
-            <div class="stat-sub">{stat.sub}</div>
-          {/if}
-        </div>
+  <!-- Stats Grid -->
+  <div class="stats-grid">
+    <div class="stat-card">
+      <div class="stat-header">
+        <span class="stat-label">Latest Block</span>
+        <span class="stat-icon blue">◫</span>
       </div>
-    {/each}
-  </section>
+      <div class="stat-value">
+        {#if data.latestBlocks.length > 0}
+          #{data.latestBlocks[0].index}
+        {:else}
+          -
+        {/if}
+      </div>
+      <div class="stat-meta">
+        {#if data.latestBlocks.length > 0}
+          {timeAgo(data.latestBlocks[0].timestamp)}
+        {:else}
+          No blocks
+        {/if}
+      </div>
+    </div>
 
+    <div class="stat-card">
+      <div class="stat-header">
+        <span class="stat-label">Active Nodes</span>
+        <span class="stat-icon green">◧</span>
+      </div>
+      <div class="stat-value">{data.nodes.length}</div>
+      <div class="stat-meta">In sync</div>
+    </div>
+
+    <div class="stat-card">
+      <div class="stat-header">
+        <span class="stat-label">Transactions</span>
+        <span class="stat-icon purple">◯</span>
+      </div>
+      <div class="stat-value">{formatNumber(data.latestTx.length)}</div>
+      <div class="stat-meta">Confirmed</div>
+    </div>
+
+    <div class="stat-card">
+      <div class="stat-header">
+        <span class="stat-label">Network</span>
+        <span class="stat-icon cyan">◈</span>
+      </div>
+      <div class="stat-value">Online</div>
+      <div class="stat-meta">Healthy</div>
+    </div>
+  </div>
+
+  <!-- Content Grid -->
   <div class="content-grid">
-    <section class="panel" in:slide={{ duration: 400, delay: 200 }}>
+    <!-- Latest Blocks -->
+    <section class="panel">
       <div class="panel-header">
-        <div class="panel-title">
-          <span class="title-icon">📦</span>
-          <h2>Latest Blocks</h2>
-        </div>
-        <a class="view-all" href="/blocks">
-          View All
-          <svg viewBox="0 0 20 20" fill="currentColor">
-            <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"/>
-          </svg>
-        </a>
+        <h2>Latest Blocks</h2>
+        <a class="view-all" href="/blocks">View all →</a>
       </div>
       
       <div class="table-container">
-        <table class="data-table">
+        <table>
           <thead>
             <tr>
               <th>Block</th>
               <th>Hash</th>
-              <th>Txns</th>
+              <th class="num">Txns</th>
               <th>Time</th>
             </tr>
           </thead>
           <tbody>
-            {#each data.latestBlocks.slice(0, 8) as block, i}
-              <tr class="hoverable" in:fade={{ duration: 200, delay: i * 50 }}>
+            {#each data.latestBlocks.slice(0, 6) as block}
+              <tr>
                 <td>
-                  <a class="block-link" href="/blocks">
-                    <span class="block-number">#{block.index}</span>
-                  </a>
+                  <a class="link" href="/blocks">#{block.index}</a>
                 </td>
                 <td>
-                  <span class="hash mono">{shortHash(block.hash, 16)}</span>
+                  <span class="hash">{shortHash(block.hash, 12)}</span>
                 </td>
-                <td>
-                  <span class="tx-count">{block.transactions?.length ?? 0}</span>
-                </td>
-                <td>
-                  <span class="time">{timeAgo(block.timestamp)}</span>
-                </td>
+                <td class="num">{block.transactions?.length ?? 0}</td>
+                <td class="time">{timeAgo(block.timestamp)}</td>
               </tr>
             {/each}
           </tbody>
@@ -117,43 +106,36 @@
       </div>
     </section>
 
-    <section class="panel" in:slide={{ duration: 400, delay: 300 }}>
+    <!-- Latest Transactions -->
+    <section class="panel">
       <div class="panel-header">
-        <div class="panel-title">
-          <span class="title-icon">💸</span>
-          <h2>Latest Transactions</h2>
-        </div>
-        <a class="view-all" href="/transactions">
-          View All
-          <svg viewBox="0 0 20 20" fill="currentColor">
-            <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"/>
-          </svg>
-        </a>
+        <h2>Latest Transactions</h2>
+        <a class="view-all" href="/transactions">View all →</a>
       </div>
       
       <div class="table-container">
-        <table class="data-table">
+        <table>
           <thead>
             <tr>
-              <th>Tx Hash</th>
+              <th>Hash</th>
               <th>From</th>
               <th>To</th>
-              <th>Value</th>
+              <th class="num">Value</th>
             </tr>
           </thead>
           <tbody>
-            {#each data.latestTx.slice(0, 8) as tx, i}
-              <tr class="hoverable" in:fade={{ duration: 200, delay: i * 50 }}>
+            {#each data.latestTx.slice(0, 6) as tx}
+              <tr>
                 <td>
-                  <span class="hash mono">{shortHash(tx.id, 12)}</span>
+                  <span class="hash">{shortHash(tx.id, 10)}</span>
                 </td>
                 <td>
-                  <span class="address mono">{tx.from}</span>
+                  <span class="addr from">{tx.from}</span>
                 </td>
                 <td>
-                  <span class="address mono">{tx.to}</span>
+                  <span class="addr to">{tx.to}</span>
                 </td>
-                <td>
+                <td class="num">
                   <span class="value">{tx.amount}</span>
                 </td>
               </tr>
@@ -166,302 +148,245 @@
 </div>
 
 <style>
-  .dashboard {
+  .page {
     display: flex;
     flex-direction: column;
-    gap: 32px;
+    gap: 20px;
   }
-  
+
   .page-header {
     display: flex;
+    align-items: center;
     justify-content: space-between;
-    align-items: flex-start;
-    gap: 20px;
-    flex-wrap: wrap;
   }
-  
-  .header-content h1 {
-    font-size: 32px;
-    font-weight: 700;
+
+  .page-header h1 {
+    font-size: 20px;
+    font-weight: 600;
     color: var(--text-primary);
-    letter-spacing: -0.5px;
-    margin: 0;
   }
-  
-  .subtitle {
-    margin: 6px 0 0;
-    color: var(--text-muted);
-    font-size: 15px;
-  }
-  
-  .node-badge {
+
+  .node-info {
     display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-    gap: 4px;
-    padding: 12px 16px;
-    background: linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(6, 182, 212, 0.05));
-    border: 1px solid rgba(99, 102, 241, 0.2);
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    background: var(--bg-tertiary);
     border-radius: var(--radius-md);
+    border: 1px solid var(--border);
   }
-  
-  .node-badge .label {
+
+  .node-info .label {
     font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
     color: var(--text-muted);
-    font-weight: 600;
+    text-transform: uppercase;
   }
-  
-  .node-badge .value {
-    font-size: 14px;
-    font-weight: 600;
-    color: var(--accent-cyan);
+
+  .node-info .value {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--accent);
+    font-family: var(--font-mono);
   }
-  
-  .mono {
-    font-family: var(--mono);
-  }
-  
+
+  /* Stats Grid */
   .stats-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-    gap: 20px;
-  }
-  
-  .stat-card {
-    display: flex;
-    align-items: flex-start;
+    grid-template-columns: repeat(4, 1fr);
     gap: 16px;
-    padding: 24px;
-    background: var(--bg-secondary);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-lg);
-    transition: all 0.3s ease;
-    animation: slideUp 0.5s ease forwards;
-    opacity: 0;
-    transform: translateY(20px);
   }
-  
-  @keyframes slideUp {
-    to {
-      opacity: 1;
-      transform: translateY(0);
+
+  @media (max-width: 1200px) {
+    .stats-grid {
+      grid-template-columns: repeat(2, 1fr);
     }
   }
-  
-  .stat-card:hover {
-    border-color: var(--border-light);
-    box-shadow: var(--shadow-md);
-    transform: translateY(-2px);
-  }
-  
-  .stat-card.blue { border-left: 3px solid var(--accent-blue); }
-  .stat-card.green { border-left: 3px solid var(--success); }
-  .stat-card.purple { border-left: 3px solid #8b5cf6; }
-  .stat-card.cyan { border-left: 3px solid var(--accent-cyan); }
-  
-  .stat-icon {
-    font-size: 28px;
-    width: 48px;
-    height: 48px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: var(--bg-tertiary);
-    border-radius: var(--radius-md);
-  }
-  
-  .stat-content {
-    flex: 1;
-  }
-  
-  .stat-label {
-    font-size: 13px;
-    color: var(--text-muted);
-    font-weight: 500;
-    margin-bottom: 4px;
-  }
-  
-  .stat-value {
-    font-size: 24px;
-    font-weight: 700;
-    color: var(--text-primary);
-    margin-bottom: 2px;
-  }
-  
-  .stat-sub {
-    font-size: 12px;
-    color: var(--text-muted);
-  }
-  
-  .content-grid {
-    display: grid;
-    grid-template-columns: 1fr;
-    gap: 24px;
-  }
-  
-  @media (min-width: 1200px) {
-    .content-grid {
-      grid-template-columns: 1fr 1fr;
-    }
-  }
-  
-  .panel {
-    background: var(--bg-secondary);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-lg);
-    overflow: hidden;
-  }
-  
-  .panel-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 20px 24px;
-    background: linear-gradient(90deg, rgba(99, 102, 241, 0.05), transparent);
-    border-bottom: 1px solid var(--border-color);
-  }
-  
-  .panel-title {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-  }
-  
-  .title-icon {
-    font-size: 20px;
-  }
-  
-  .panel-title h2 {
-    margin: 0;
-    font-size: 16px;
-    font-weight: 600;
-    color: var(--text-primary);
-  }
-  
-  .view-all {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    color: var(--accent-blue);
-    text-decoration: none;
-    font-size: 13px;
-    font-weight: 600;
-    padding: 6px 12px;
-    border-radius: var(--radius-sm);
-    transition: all 0.2s;
-  }
-  
-  .view-all:hover {
-    background: rgba(59, 130, 246, 0.1);
-  }
-  
-  .view-all svg {
-    width: 16px;
-    height: 16px;
-  }
-  
-  .table-container {
-    overflow-x: auto;
-  }
-  
-  .data-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 13px;
-  }
-  
-  .data-table th {
-    text-align: left;
-    padding: 14px 20px;
-    font-weight: 600;
-    color: var(--text-muted);
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    background: var(--bg-tertiary);
-    border-bottom: 1px solid var(--border-color);
-  }
-  
-  .data-table td {
-    padding: 14px 20px;
-    border-bottom: 1px solid var(--border-color);
-    color: var(--text-secondary);
-  }
-  
-  .data-table tr.hoverable:hover td {
-    background: var(--bg-hover);
-    cursor: pointer;
-  }
-  
-  .data-table tr:last-child td {
-    border-bottom: none;
-  }
-  
-  .block-link {
-    text-decoration: none;
-    color: var(--accent-blue);
-  }
-  
-  .block-number {
-    font-weight: 600;
-  }
-  
-  .hash {
-    color: var(--text-muted);
-    font-size: 12px;
-  }
-  
-  .address {
-    color: var(--accent-cyan);
-    font-size: 12px;
-  }
-  
-  .tx-count {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 28px;
-    padding: 2px 8px;
-    background: rgba(99, 102, 241, 0.1);
-    border-radius: var(--radius-sm);
-    font-weight: 600;
-    font-size: 12px;
-    color: var(--accent-indigo);
-  }
-  
-  .time {
-    color: var(--text-muted);
-    font-size: 12px;
-  }
-  
-  .value {
-    font-weight: 600;
-    color: var(--success);
-  }
-  
-  @media (max-width: 768px) {
-    .page-header {
-      flex-direction: column;
-    }
-    
-    .node-badge {
-      align-items: flex-start;
-      width: 100%;
-    }
-    
+
+  @media (max-width: 640px) {
     .stats-grid {
       grid-template-columns: 1fr;
     }
-    
-    .data-table {
-      font-size: 12px;
+  }
+
+  .stat-card {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 16px;
+  }
+
+  .stat-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+  }
+
+  .stat-label {
+    font-size: 11px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .stat-icon {
+    font-size: 14px;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-sm);
+  }
+
+  .stat-icon.blue { background: rgba(59, 130, 246, 0.1); color: #3b82f6; }
+  .stat-icon.green { background: rgba(34, 197, 94, 0.1); color: #22c55e; }
+  .stat-icon.purple { background: rgba(168, 85, 247, 0.1); color: #a855f7; }
+  .stat-icon.cyan { background: rgba(6, 182, 212, 0.1); color: #06b6d4; }
+
+  .stat-value {
+    font-size: 24px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 4px;
+  }
+
+  .stat-meta {
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+
+  /* Content Grid */
+  .content-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 20px;
+  }
+
+  @media (max-width: 1024px) {
+    .content-grid {
+      grid-template-columns: 1fr;
     }
-    
-    .data-table th,
-    .data-table td {
-      padding: 12px 14px;
-    }
+  }
+
+  .panel {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+  }
+
+  .panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-tertiary);
+  }
+
+  .panel-header h2 {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin: 0;
+  }
+
+  .view-all {
+    font-size: 11px;
+    color: var(--accent);
+    transition: color 0.15s;
+  }
+
+  .view-all:hover {
+    color: var(--accent-hover);
+  }
+
+  .table-container {
+    overflow-x: auto;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+  }
+
+  th {
+    text-align: left;
+    padding: 10px 12px;
+    font-weight: 500;
+    color: var(--text-muted);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    background: var(--bg-tertiary);
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+  }
+
+  th.num {
+    text-align: right;
+  }
+
+  td {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    color: var(--text-secondary);
+    white-space: nowrap;
+  }
+
+  tr:last-child td {
+    border-bottom: none;
+  }
+
+  tr:hover td {
+    background: var(--bg-hover);
+  }
+
+  td.num {
+    text-align: right;
+  }
+
+  .link {
+    color: var(--accent);
+    font-weight: 500;
+  }
+
+  .link:hover {
+    text-decoration: underline;
+  }
+
+  .hash {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+
+  .time {
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+
+  .addr {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: var(--radius-sm);
+  }
+
+  .addr.from {
+    background: rgba(239, 68, 68, 0.1);
+    color: #f87171;
+  }
+
+  .addr.to {
+    background: rgba(34, 197, 94, 0.1);
+    color: #22c55e;
+  }
+
+  .value {
+    font-weight: 600;
+    color: var(--text-primary);
   }
 </style>
