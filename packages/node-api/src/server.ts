@@ -1,3 +1,6 @@
+/// <reference types="bun" />
+/// <reference types="node" />
+
 import { BlockchainNetwork } from "./network.js";
 
 const port = Number(process.env.PORT ?? 3000);
@@ -54,7 +57,7 @@ function errorResponse(message: string, status = 400): Response {
 
 Bun.serve({
   port,
-  async fetch(request) {
+  async fetch(request: Request) {  // ← Fixed: added Request type
     const url = new URL(request.url);
     const { pathname } = url;
 

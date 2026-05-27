@@ -10,6 +10,8 @@
     "@liquid/blockchain": "workspace:*",
     "@liquid/network": "workspace:*",
     "@liquid/shared": "workspace:*",
-    "@liquid/simulation": "workspace:*"
+    "@liquid/simulation": "workspace:*",
+    "@types/bun": "^1.3.14",
+    "@types/node": "^25.9.1"
   }
 }
