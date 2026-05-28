@@ -4,14 +4,17 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "bun run src/server.ts"
+    "dev": "bun run src/server.ts",
+    "check-types": "tsc --noEmit"
   },
   "dependencies": {
     "@liquid/blockchain": "workspace:*",
     "@liquid/network": "workspace:*",
     "@liquid/shared": "workspace:*",
-    "@liquid/simulation": "workspace:*",
     "@types/bun": "^1.3.14",
     "@types/node": "^25.9.1"
+  },
+  "devDependencies": {
+    "typescript": "5.9.2"
   }
 }

@@ -346,6 +346,13 @@ export class GossipProtocol {
     }
   }
 
+  public setFanoutSize(fanoutSize: number): void {
+    if (!Number.isInteger(fanoutSize) || fanoutSize < 1) {
+      throw new Error("Fanout size must be an integer >= 1");
+    }
+    this.config.fanoutSize = fanoutSize;
+  }
+
   // Get network topology info
   public getNetworkTopology(): {
     nodeId: string;
