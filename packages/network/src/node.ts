@@ -1,4 +1,8 @@
-import { Blockchain, createTransaction } from "@liquid/blockchain";
+import {
+  Blockchain,
+  createTransaction,
+  validateBlock,
+} from "@liquid/blockchain";
 import { type Transaction, type Block } from "@liquid/shared";
 import { GossipProtocol, GossipNode } from "./gossip.js";
 import {
@@ -51,19 +55,16 @@ export class NetworkNode {
     return new NetworkNode(id, blockchain, gossip, config);
   }
 
-  // Register this node in the gossip network
   public register(): void {
     this.gossipNode = this.gossip.registerNode(this.id, (message) =>
       this.handleMessage(message),
     );
   }
 
-  // Unregister from the gossip network
   public unregister(): void {
     this.gossip.unregisterNode(this.id);
   }
 
-  // Get node info
   public getInfo() {
     const latestBlock = this.blockchain.getLatestBlock();
     return {
@@ -77,19 +78,15 @@ export class NetworkNode {
     };
   }
 
-  // Submit transaction and broadcast via gossip
   public submitTransaction(
     from: string,
     to: string,
     amount: number,
   ): { txId: string; messageId: string } {
-    // Create transaction
     const tx = createTransaction(from, to, amount);
 
-    // Add to local blockchain mempool
     this.blockchain.addTransaction(tx);
 
-    // Broadcast via gossip protocol
     const payload: TransactionPayload = {
       id: tx.id,
       from: tx.from,
@@ -109,17 +106,14 @@ export class NetworkNode {
     return { txId: tx.id, messageId };
   }
 
-  // Mine block and broadcast via gossip
   public async mine(minerAddress: string): Promise<{
     height: number;
     hash: string;
     pendingTxCount: number;
     messageId: string;
   }> {
-    // Mine the block
     const block = await this.blockchain.minePendingTransactions(minerAddress);
 
-    // Convert block to payload
     const payload: BlockPayload = {
       index: block.index,
       timestamp: block.timestamp,
@@ -135,7 +129,6 @@ export class NetworkNode {
       nonce: block.nonce,
     };
 
-    // Broadcast via gossip protocol
     const messageId = this.gossip.broadcastBlock(
       this.id,
       payload,
@@ -152,7 +145,6 @@ export class NetworkNode {
     };
   }
 
-  // Handle incoming gossip messages
   private handleMessage(message: NetworkMessage): void {
     switch (message.type) {
       case "TRANSACTION":
@@ -162,29 +154,27 @@ export class NetworkNode {
         this.handleBlock(message.payload as BlockPayload);
         break;
       default:
-        // Ignore other message types for now
         break;
     }
   }
 
-  // Handle received transaction
   private handleTransaction(payload: TransactionPayload): void {
     try {
-      // Check if transaction already exists in mempool
       const existing = this.blockchain.pendingTransactions.find(
         (tx) => tx.id === payload.id,
       );
       if (existing) return;
 
-      // Recreate transaction
-      const tx = createTransaction(payload.from, payload.to, payload.amount);
-      // Override the id to match the received transaction
-      (tx as Transaction).id = payload.id;
+      const tx: Transaction = {
+        id: payload.id,
+        from: payload.from,
+        to: payload.to,
+        amount: payload.amount,
+        timestamp: payload.timestamp,
+      };
 
-      // Add to mempool
       this.blockchain.addTransaction(tx);
     } catch (error) {
-      // Transaction validation failed, ignore
       console.warn(
         `[${this.id}] Failed to add transaction ${payload.id}:`,
         error,
@@ -192,119 +182,110 @@ export class NetworkNode {
     }
   }
 
-  // Handle received block
+  private blockPayloadToBlock(payload: BlockPayload): Block {
+    return {
+      index: payload.index,
+      timestamp: payload.timestamp,
+      transactions: payload.transactions.map((tx) => ({
+        id: tx.id,
+        from: tx.from,
+        to: tx.to,
+        amount: tx.amount,
+        timestamp: tx.timestamp,
+      })),
+      previousHash: payload.previousHash,
+      hash: payload.hash,
+      nonce: payload.nonce,
+    };
+  }
+
+  private removeBlockTxsFromMempool(block: Block): void {
+    const txIdsInBlock = new Set(block.transactions.map((tx) => tx.id));
+    const remainingPending = this.blockchain.pendingTransactions.filter(
+      (tx) => !txIdsInBlock.has(tx.id),
+    );
+    this.blockchain.pendingTransactions.length = 0;
+    this.blockchain.pendingTransactions.push(...remainingPending);
+  }
+
+  private async addValidBlock(payload: BlockPayload): Promise<boolean> {
+    const latestBlock = this.blockchain.getLatestBlock();
+
+    if (payload.previousHash !== latestBlock.hash) {
+      this.pendingBlocks.push(payload);
+      return false;
+    }
+
+    const block = this.blockPayloadToBlock(payload);
+
+    const isValid = await validateBlock(
+      block,
+      latestBlock,
+      this.blockchain.config.difficulty,
+    );
+    if (!isValid) {
+      console.warn(`[${this.id}] Rejected invalid block ${payload.hash}`);
+      return false;
+    }
+
+    this.blockchain.chain.push(block);
+    this.removeBlockTxsFromMempool(block);
+    await this.processPendingBlocks();
+    return true;
+  }
+
   private handleBlock(payload: BlockPayload): void {
     try {
-      // Check if block already exists
       const existing = this.blockchain.chain.find(
         (b) => b.hash === payload.hash,
       );
       if (existing) return;
 
-      // Check if we can add this block
-      const latestBlock = this.blockchain.getLatestBlock();
-
-      // Simple validation: check if previous hash matches
-      if (payload.previousHash !== latestBlock.hash) {
-        // Block doesn't fit our chain, queue it for later
-        this.pendingBlocks.push(payload);
-        return;
-      }
-
-      // Create block object and add to chain
-      const block: Block = {
-        index: payload.index,
-        timestamp: payload.timestamp,
-        transactions: payload.transactions.map((tx) => ({
-          id: tx.id,
-          from: tx.from,
-          to: tx.to,
-          amount: tx.amount,
-          timestamp: tx.timestamp,
-        })),
-        previousHash: payload.previousHash,
-        hash: payload.hash,
-        nonce: payload.nonce,
-      };
-
-      // Add to chain
-      this.blockchain.chain.push(block);
-
-      // Remove transactions that were included in the block from mempool
-      const txIdsInBlock = new Set(block.transactions.map((tx) => tx.id));
-      const remainingPending = this.blockchain.pendingTransactions.filter(
-        (tx) => !txIdsInBlock.has(tx.id),
-      );
-      this.blockchain.pendingTransactions.length = 0;
-      this.blockchain.pendingTransactions.push(...remainingPending);
-
-      // Try to process any pending blocks
-      this.processPendingBlocks();
+      this.addValidBlock(payload);
     } catch (error) {
       console.warn(`[${this.id}] Failed to add block ${payload.hash}:`, error);
     }
   }
 
-  // Process pending blocks that might now fit
-  private processPendingBlocks(): void {
+  private async processPendingBlocks(): Promise<void> {
     const processed: BlockPayload[] = [];
 
     for (const payload of this.pendingBlocks) {
       const latestBlock = this.blockchain.getLatestBlock();
 
       if (payload.previousHash === latestBlock.hash) {
-        // Can add this block now
-        const block: Block = {
-          index: payload.index,
-          timestamp: payload.timestamp,
-          transactions: payload.transactions.map((tx) => ({
-            id: tx.id,
-            from: tx.from,
-            to: tx.to,
-            amount: tx.amount,
-            timestamp: tx.timestamp,
-          })),
-          previousHash: payload.previousHash,
-          hash: payload.hash,
-          nonce: payload.nonce,
-        };
-
-        this.blockchain.chain.push(block);
-
-        // Remove transactions
-        const txIdsInBlock = new Set(block.transactions.map((tx) => tx.id));
-        const remainingPending = this.blockchain.pendingTransactions.filter(
-          (tx) => !txIdsInBlock.has(tx.id),
+        const block = this.blockPayloadToBlock(payload);
+        const isValid = await validateBlock(
+          block,
+          latestBlock,
+          this.blockchain.config.difficulty,
         );
-        this.blockchain.pendingTransactions.length = 0;
-        this.blockchain.pendingTransactions.push(...remainingPending);
 
-        processed.push(payload);
+        if (isValid) {
+          this.blockchain.chain.push(block);
+          this.removeBlockTxsFromMempool(block);
+          processed.push(payload);
+        }
       }
     }
 
-    // Remove processed blocks
     this.pendingBlocks = this.pendingBlocks.filter(
       (b) => !processed.includes(b),
     );
   }
 
-  // Set difficulty
   public setDifficulty(difficulty: number): void {
     this.blockchain.setDifficulty(difficulty);
   }
 
-  // Set max transactions per block
   public setMaxTransactionsPerBlock(limit: number): void {
     this.blockchain.setMaxTransactionsPerBlock(limit);
   }
 
-  // Get neighbors
   public getNeighbors(): string[] {
     return this.gossipNode ? Array.from(this.gossipNode.neighbors) : [];
   }
 
-  // Discover new neighbors
   public discoverNeighbors(): void {
     this.gossip.discoverNeighbors(this.id);
   }

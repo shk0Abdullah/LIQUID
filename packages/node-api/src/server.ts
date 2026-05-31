@@ -57,7 +57,8 @@ function errorResponse(message: string, status = 400): Response {
 
 Bun.serve({
   port,
-  async fetch(request: Request) {  // ← Fixed: added Request type
+  async fetch(request: Request) {
+    // ← Fixed: added Request type
     const url = new URL(request.url);
     const { pathname } = url;
 
@@ -181,6 +182,13 @@ Bun.serve({
       network.setDifficultyForAll(actionDifficulty);
       network.setMaxTransactionsPerBlockForAll(actionMaxTxsPerBlock);
 
+      const maxNeighbors = 5;
+      const fanoutSize = Math.max(
+        1,
+        Math.round(actionGossipFanout * maxNeighbors),
+      );
+      network.setGossipFanout(fanoutSize);
+
       const beforePending = network.getNodeInfo(nodeId).pendingTxCount;
       for (let i = 0; i < incomingTxs; i += 1) {
         network.submitTransaction(`user-${i + 1}`, `merchant-${i + 1}`, i + 1);
@@ -202,7 +210,7 @@ Bun.serve({
 
       const baseDelay = 20;
       const queueDelay = afterPending * 2;
-      const fanoutDelay = actionGossipFanout * 80;
+      const fanoutDelay = fanoutSize * 16;
       const networkDelay = baseDelay + queueDelay + fanoutDelay;
 
       const invalidMessageRate = clamp(
@@ -215,7 +223,7 @@ Bun.serve({
       const droppedMessageRate = clamp(
         0.01 +
           (incomingTxs / Math.max(1, actionMaxTxsPerBlock)) * 0.1 +
-          actionGossipFanout * 0.05,
+          fanoutSize * 0.01,
         0,
         1,
       );
@@ -239,7 +247,7 @@ Bun.serve({
           applied_action: {
             difficulty: actionDifficulty,
             maxTxsPerBlock: actionMaxTxsPerBlock,
-            gossipFanout: actionGossipFanout,
+            gossipFanout: fanoutSize,
             mineIntervalMs: actionMineIntervalMs,
           },
           minedHash,

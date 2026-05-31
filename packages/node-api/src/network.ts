@@ -156,6 +156,10 @@ export class BlockchainNetwork {
     }
   }
 
+  public setGossipFanout(fanoutSize: number): void {
+    this.gossip.setFanoutSize(fanoutSize);
+  }
+
   public getState(): {
     nodeCount: number;
     nodes: NodeInfo[];
