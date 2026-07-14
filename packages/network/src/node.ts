@@ -19,6 +19,17 @@ export interface NetworkNodeConfig {
   useSubsets: boolean;
 }
 
+export interface NodeMetrics {
+  forksDetected: number;
+  blocksReceived: number;
+  blocksAccepted: number;
+  blocksRejected: number;
+  txsConfirmed: number;
+  lastBlockTimestamp: number;
+  blockIntervalMs: number;
+  blockUtilization: number;
+}
+
 export const DEFAULT_NETWORK_NODE_CONFIG: NetworkNodeConfig = {
   fanoutSize: 2,
   broadcastSubsetSize1: 2,
@@ -33,6 +44,16 @@ export class NetworkNode {
   private gossip: GossipProtocol;
   private config: NetworkNodeConfig;
   private pendingBlocks: BlockPayload[] = [];
+  private metrics: NodeMetrics = {
+    forksDetected: 0,
+    blocksReceived: 0,
+    blocksAccepted: 0,
+    blocksRejected: 0,
+    txsConfirmed: 0,
+    lastBlockTimestamp: 0,
+    blockIntervalMs: 0,
+    blockUtilization: 0,
+  };
 
   constructor(
     id: string,
@@ -44,6 +65,8 @@ export class NetworkNode {
     this.blockchain = blockchain;
     this.gossip = gossip;
     this.config = { ...DEFAULT_NETWORK_NODE_CONFIG, ...config };
+    const genesis = blockchain.getLatestBlock();
+    this.metrics.lastBlockTimestamp = genesis.timestamp;
   }
 
   public static async create(
@@ -78,13 +101,37 @@ export class NetworkNode {
     };
   }
 
+  public getMetrics(): NodeMetrics {
+    const latestBlock = this.blockchain.getLatestBlock();
+    const maxTxs = this.blockchain.getMaxTransactionsPerBlock();
+    const nonRewardTxs = latestBlock.transactions.filter(
+      (tx) => tx.from !== "SYSTEM",
+    ).length;
+    return {
+      ...this.metrics,
+      blockUtilization: maxTxs > 0 ? nonRewardTxs / maxTxs : 0,
+    };
+  }
+
+  public resetMetrics(): void {
+    this.metrics = {
+      forksDetected: 0,
+      blocksReceived: 0,
+      blocksAccepted: 0,
+      blocksRejected: 0,
+      txsConfirmed: 0,
+      lastBlockTimestamp: this.blockchain.getLatestBlock().timestamp,
+      blockIntervalMs: 0,
+      blockUtilization: 0,
+    };
+  }
+
   public submitTransaction(
     from: string,
     to: string,
     amount: number,
   ): { txId: string; messageId: string } {
     const tx = createTransaction(from, to, amount);
-
     this.blockchain.addTransaction(tx);
 
     const payload: TransactionPayload = {
@@ -113,6 +160,15 @@ export class NetworkNode {
     messageId: string;
   }> {
     const block = await this.blockchain.minePendingTransactions(minerAddress);
+
+    const now = Date.now();
+    this.metrics.blockIntervalMs = now - this.metrics.lastBlockTimestamp;
+    this.metrics.lastBlockTimestamp = now;
+    const nonRewardTxs = block.transactions.filter(
+      (tx) => tx.from !== "SYSTEM",
+    ).length;
+    this.metrics.txsConfirmed += nonRewardTxs;
+    this.metrics.blocksAccepted++;
 
     const payload: BlockPayload = {
       index: block.index,
@@ -210,8 +266,15 @@ export class NetworkNode {
 
   private async addValidBlock(payload: BlockPayload): Promise<boolean> {
     const latestBlock = this.blockchain.getLatestBlock();
+    this.metrics.blocksReceived++;
 
     if (payload.previousHash !== latestBlock.hash) {
+      const conflicting = this.pendingBlocks.find(
+        (b) => b.index === payload.index,
+      );
+      if (conflicting || payload.index === latestBlock.index + 1) {
+        this.metrics.forksDetected++;
+      }
       this.pendingBlocks.push(payload);
       return false;
     }
@@ -224,12 +287,22 @@ export class NetworkNode {
       this.blockchain.config.difficulty,
     );
     if (!isValid) {
-      console.warn(`[${this.id}] Rejected invalid block ${payload.hash}`);
+      this.metrics.blocksRejected++;
       return false;
     }
 
     this.blockchain.chain.push(block);
     this.removeBlockTxsFromMempool(block);
+    this.metrics.blocksAccepted++;
+
+    const now = Date.now();
+    this.metrics.blockIntervalMs = now - this.metrics.lastBlockTimestamp;
+    this.metrics.lastBlockTimestamp = now;
+    const nonRewardTxs = block.transactions.filter(
+      (tx) => tx.from !== "SYSTEM",
+    ).length;
+    this.metrics.txsConfirmed += nonRewardTxs;
+
     await this.processPendingBlocks();
     return true;
   }
@@ -264,6 +337,16 @@ export class NetworkNode {
         if (isValid) {
           this.blockchain.chain.push(block);
           this.removeBlockTxsFromMempool(block);
+          this.metrics.blocksAccepted++;
+
+          const now = Date.now();
+          this.metrics.blockIntervalMs = now - this.metrics.lastBlockTimestamp;
+          this.metrics.lastBlockTimestamp = now;
+          const nonRewardTxs = block.transactions.filter(
+            (tx) => tx.from !== "SYSTEM",
+          ).length;
+          this.metrics.txsConfirmed += nonRewardTxs;
+
           processed.push(payload);
         }
       }

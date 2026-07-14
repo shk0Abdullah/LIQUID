@@ -1,68 +1,39 @@
 # RL Python Package
 
-Reinforcement Learning agents for adaptive blockchain consensus.
+Multi-agent DQN with sub-policy architecture for adaptive blockchain consensus.
 
 ## Architecture
 
-This package implements RL algorithms to optimize blockchain parameters:
+Each node in the blockchain network gets its own independent DQN agent with 3 sub-policy heads:
 
-- **Difficulty**: Mining difficulty (1-12)
-- **maxTxsPerBlock**: Block capacity (1-500)
-- **gossipFanout**: Network propagation factor (0.0-1.0)
-- **mineIntervalMs**: Target mining interval (100-10000ms)
+| Sub-Policy       | Action Space | Actions                                   |
+| ---------------- | ------------ | ----------------------------------------- |
+| `difficulty`     | 9 discrete   | 1, 2, 3, 4, 5, 6, 8, 10, 12               |
+| `maxTxsPerBlock` | 7 discrete   | 5, 10, 20, 30, 50, 80, 100                |
+| `gossipFanout`   | 5 discrete   | 1, 2, 3, 4, 5 (normalized to 0-1 for API) |
 
-## Algorithms
-
-### 1. DQN (Deep Q-Network) - `train_dqn.py`
-
-State-of-the-art deep RL using neural networks.
-
-**Features:**
-
-- Continuous action space
-- Experience replay buffer
-- Target network stabilization
-- Neural network function approximation
-- Model save/load
-
-**Usage:**
-
-```bash
-# Training
-python train_dqn.py
-
-# Testing trained model
-python train_dqn.py --test
-```
-
-### 2. Q-Learning (Legacy) - `train_q_learning.py`
-
-Classic tabular Q-learning with discrete actions.
-
-**Usage:**
-
-```bash
-python train_q_learning.py
-```
+Each sub-policy is a small `Linear(4→64)→ReLU→Linear(64→32)→ReLU→Linear(32→N)` network. They share the same state observation but produce independent action selections. This avoids the exponential action space of joint actions (9×7×5=315 vs 9+7+5=21 outputs).
 
 ## State Space
 
-- `mempool_size`: Pending transactions (0-1000)
-- `current_tps`: Transactions per second (0-100)
-- `network_delay`: Network latency (0-500ms)
-- `incoming_txs`: Incoming transactions (0-100)
+Each node observes 4 local state variables:
 
-## Action Space
+| State               | Normalization    | Source                          |
+| ------------------- | ---------------- | ------------------------------- |
+| `mempool_size`      | / 1000           | `node.pendingTxCount`           |
+| `block_utilization` | as-is (0-1)      | `node.metrics.blockUtilization` |
+| `forks_detected`    | cap 10, / 10     | `node.metrics.forksDetected`    |
+| `block_interval_ms` | cap 30s, / 30000 | `node.metrics.blockIntervalMs`  |
 
-**DQN** (Continuous):
+## Reward Function
 
-- Each parameter is a continuous value [0,1], mapped to actual ranges
-- Enables fine-grained control
+**Measured from real network behavior** (not synthetic formulas):
 
-**Q-Learning** (Discrete):
+```
+reward = txs_confirmed - fork_penalty * forks_detected
+```
 
-- 3 predefined action configurations
-- Simpler but less flexible
+Where `fork_penalty = 3.0` (a fork costs 3x a confirmed tx).
 
 ## Prerequisites
 
@@ -75,69 +46,74 @@ cd packages/node-api && bun run dev
 2. Install Python dependencies:
 
 ```bash
-pip install requests numpy
+pip install torch requests
 ```
 
-## Training Process
+## Usage
 
-The agent learns to:
+```bash
+# Training (default: 200 episodes, 50 steps/episode)
+python train_dqn.py
 
-1. **Maximize TPS** (transactions per second)
-2. **Minimize latency** (network delay)
-3. **Optimize resource usage** (penalizes invalid/dropped messages)
+# Training with simulated network latency (causes real forks)
+python train_dqn.py --propagation-delay 50
 
-**Reward Function:**
+# Test trained agent
+python train_dqn.py --test
 
+# Test with latency
+python train_dqn.py --test --propagation-delay 50
 ```
-reward = current_tps - (invalid_rate + dropped_rate + timeout_rate)
+
+## Per-Node RL Environment
+
+The `/rl/step` endpoint accepts per-node actions:
+
+```json
+POST /rl/step
+{
+  "incomingTxs": 10,
+  "actions": {
+    "node-1": { "difficulty": 3, "maxTxsPerBlock": 20, "gossipFanout": 0.4 },
+    "node-2": { "difficulty": 5, "maxTxsPerBlock": 10, "gossipFanout": 0.6 },
+    "node-3": { "difficulty": 2, "maxTxsPerBlock": 30, "gossipFanout": 0.8 }
+  }
+}
 ```
+
+Each node receives its own reward based on its local metrics.
 
 ## Hyperparameters
 
-### DQN
-
 - Learning rate: 0.001
-- Discount factor: 0.99
-- Epsilon decay: 0.995
-- Batch size: 32
-- Replay buffer: 10000
-- Target update: every 100 steps
-
-### Q-Learning
-
-- Learning rate: 0.2
 - Discount factor: 0.95
-- Epsilon decay: 0.96
+- Epsilon decay: 0.97 per episode
+- Batch size: 32
+- Replay buffer: 5000
+- Target network update: every 50 steps
+- Episodes: 200
+- Steps per episode: 50
 
-## Integration with Other Packages
+## Model Files
+
+Models are saved as PyTorch `.pt` files:
+
+- `dqn_model.pt`: Auto-loaded on restart
+- `dqn_model_ep{N}.pt`: Checkpoints every 50 episodes
+- `dqn_model_final.pt`: Final trained model
+
+## Integration
 
 ```
-RL Python Package
-       ↓ HTTP API calls
+Multi-Agent DQN (Python/PyTorch)
+        ↓ Per-node actions via HTTP
 Node API Server (packages/node-api)
-       ↓ Uses
+        ↓ Per-node difficulty/txs/fanout
 Gossip Network (packages/network)
-       ↓ Manages
+        ↓ Real metrics: forks, intervals, utilization
 Blockchain Nodes (packages/blockchain)
 ```
 
-The RL agent treats the blockchain as an environment and learns optimal policies for consensus parameters.
+## Propagation Delay
 
-## Model Output
-
-Models are saved as JSON files:
-
-- `dqn_model.json`: Current best model
-- `dqn_model_ep{N}.json`: Checkpoints every 50 episodes
-- `dqn_model_final.json`: Final trained model
-
-## Results
-
-After training, the agent learns to:
-
-- Adjust difficulty based on network load
-- Optimize block size for throughput
-- Balance gossip fanout vs. latency
-- Set appropriate mining intervals
-
-This creates an **adaptive consensus algorithm** that responds to network conditions in real-time.
+Use `--propagation-delay N` to introduce simulated network latency (ms). This creates the conditions for forks — when propagation delay exceeds block interval, multiple nodes mine at the same height. Without delay, gossip is instant and forks never occur.
