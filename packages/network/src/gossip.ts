@@ -14,32 +14,47 @@ export interface GossipNode {
 }
 
 export interface GossipConfig {
-  fanoutSize: number; // Number of random neighbors to pick for broadcast
-  ttl: number; // Time-to-live for messages
-  neighborDiscoveryInterval: number; // Interval to discover new neighbors
-  maxNeighbors: number; // Maximum number of neighbors per node
+  fanoutSize: number;
+  ttl: number;
+  neighborDiscoveryInterval: number;
+  maxNeighbors: number;
+  propagationDelayMs: number;
+}
+
+export interface GossipMetrics {
+  messagesSent: number;
+  messagesDeduped: number;
+  messagesDelivered: number;
+  averageHops: number;
+  totalHops: number;
+  deliveriesTracked: number;
 }
 
 export const DEFAULT_GOSSIP_CONFIG: GossipConfig = {
-  fanoutSize: 2, // Send to 2 random neighbors
+  fanoutSize: 2,
   ttl: 10,
   neighborDiscoveryInterval: 30000,
   maxNeighbors: 5,
+  propagationDelayMs: 0,
 };
 
 export class GossipProtocol {
   private nodes = new Map<string, GossipNode>();
   private config: GossipConfig;
-  private messageCallbacks = new Map<
-    string,
-    (message: NetworkMessage) => void
-  >();
+  private metrics: GossipMetrics = {
+    messagesSent: 0,
+    messagesDeduped: 0,
+    messagesDelivered: 0,
+    averageHops: 0,
+    totalHops: 0,
+    deliveriesTracked: 0,
+  };
+  private messageHops = new Map<string, number>();
 
   constructor(config: Partial<GossipConfig> = {}) {
     this.config = { ...DEFAULT_GOSSIP_CONFIG, ...config };
   }
 
-  // Register a node in the network
   public registerNode(
     nodeId: string,
     onMessageReceived?: (message: NetworkMessage) => void,
@@ -55,30 +70,23 @@ export class GossipProtocol {
     return node;
   }
 
-  // Remove a node from the network
   public unregisterNode(nodeId: string): void {
     const node = this.nodes.get(nodeId);
     if (!node) return;
-
-    // Remove this node from all other nodes' neighbor lists
     for (const otherNode of this.nodes.values()) {
       otherNode.neighbors.delete(nodeId);
     }
-
     this.nodes.delete(nodeId);
   }
 
-  // Get all nodes in the network
   public getAllNodes(): GossipNode[] {
     return Array.from(this.nodes.values());
   }
 
-  // Get node by ID
   public getNode(nodeId: string): GossipNode | undefined {
     return this.nodes.get(nodeId);
   }
 
-  // Assign initial neighbors to a node
   private assignInitialNeighbors(nodeId: string): void {
     const node = this.nodes.get(nodeId);
     if (!node) return;
@@ -87,7 +95,6 @@ export class GossipProtocol {
       (id) => id !== nodeId,
     );
 
-    // Pick random neighbors up to maxNeighbors
     const numNeighborsToAdd = Math.min(
       this.config.maxNeighbors,
       otherNodeIds.length,
@@ -97,8 +104,6 @@ export class GossipProtocol {
     for (let i = 0; i < numNeighborsToAdd; i++) {
       const neighborId = shuffled[i];
       node.neighbors.add(neighborId);
-
-      // Bidirectional connection
       const neighborNode = this.nodes.get(neighborId);
       if (
         neighborNode &&
@@ -109,7 +114,6 @@ export class GossipProtocol {
     }
   }
 
-  // Shuffle array using Fisher-Yates algorithm
   private shuffleArray<T>(array: T[]): T[] {
     const shuffled = [...array];
     for (let i = shuffled.length - 1; i > 0; i--) {
@@ -119,17 +123,63 @@ export class GossipProtocol {
     return shuffled;
   }
 
-  // Get random subset of neighbors (fanout)
   private getRandomNeighbors(nodeId: string, count: number): string[] {
     const node = this.nodes.get(nodeId);
     if (!node || node.neighbors.size === 0) return [];
-
     const neighbors = Array.from(node.neighbors);
     const shuffled = this.shuffleArray(neighbors);
     return shuffled.slice(0, Math.min(count, shuffled.length));
   }
 
-  // Broadcast message using gossip protocol
+  private scheduleDelivery(
+    targetId: string,
+    message: NetworkMessage,
+    hop: number,
+  ): void {
+    const deliver = () => {
+      const targetNode = this.nodes.get(targetId);
+      if (!targetNode) return;
+
+      if (targetNode.receivedMessages.has(message.id)) {
+        this.metrics.messagesDeduped++;
+        return;
+      }
+
+      targetNode.receivedMessages.add(message.id);
+      this.metrics.messagesDelivered++;
+
+      this.messageHops.set(message.id, hop);
+      this.metrics.totalHops += hop;
+      this.metrics.deliveriesTracked++;
+      this.metrics.averageHops =
+        this.metrics.totalHops / this.metrics.deliveriesTracked;
+
+      if (targetNode.onMessageReceived) {
+        targetNode.onMessageReceived(message);
+      }
+
+      if (message.ttl > 1) {
+        const forwardMessage = { ...message, ttl: message.ttl - 1 };
+        const selectedNeighbors = this.getRandomNeighbors(
+          targetId,
+          this.config.fanoutSize,
+        );
+        for (const neighborId of selectedNeighbors) {
+          if (neighborId !== message.senderId) {
+            this.metrics.messagesSent++;
+            this.scheduleDelivery(neighborId, forwardMessage, hop + 1);
+          }
+        }
+      }
+    };
+
+    if (this.config.propagationDelayMs > 0) {
+      setTimeout(deliver, this.config.propagationDelayMs);
+    } else {
+      deliver();
+    }
+  }
+
   public broadcast(
     senderId: string,
     type: MessageType,
@@ -143,25 +193,22 @@ export class GossipProtocol {
       ttl ?? this.config.ttl,
     );
 
-    // Mark as received by sender
     const senderNode = this.nodes.get(senderId);
     if (senderNode) {
       senderNode.receivedMessages.add(message.id);
     }
 
-    // Get two subsets of random neighbors
     const fanout = this.config.fanoutSize;
     const selectedNeighbors = this.getRandomNeighbors(senderId, fanout);
 
-    // Send to selected neighbors
     for (const neighborId of selectedNeighbors) {
-      this.sendMessage(neighborId, message);
+      this.metrics.messagesSent++;
+      this.scheduleDelivery(neighborId, message, 1);
     }
 
     return message.id;
   }
 
-  // Broadcast to specific subset sizes (two subsets)
   public broadcastWithSubsets(
     senderId: string,
     type: MessageType,
@@ -177,103 +224,32 @@ export class GossipProtocol {
       ttl ?? this.config.ttl,
     );
 
-    // Mark as received by sender
     const senderNode = this.nodes.get(senderId);
     if (senderNode) {
       senderNode.receivedMessages.add(message.id);
     }
 
-    // Get all neighbors
     const node = this.nodes.get(senderId);
     if (!node || node.neighbors.size === 0) return message.id;
 
     const neighbors = Array.from(node.neighbors);
     const shuffled = this.shuffleArray(neighbors);
-
-    // Split into two subsets
     const subset1 = shuffled.slice(0, Math.min(subsetSize1, shuffled.length));
     const remaining = shuffled.slice(subsetSize1);
     const subset2 = remaining.slice(0, Math.min(subsetSize2, remaining.length));
 
-    // Send to subset 1
     for (const neighborId of subset1) {
-      this.sendMessage(neighborId, message);
+      this.metrics.messagesSent++;
+      this.scheduleDelivery(neighborId, message, 1);
     }
-
-    // Send to subset 2
     for (const neighborId of subset2) {
-      this.sendMessage(neighborId, message);
+      this.metrics.messagesSent++;
+      this.scheduleDelivery(neighborId, message, 1);
     }
 
     return message.id;
   }
 
-  // Send message to specific node
-  private sendMessage(targetId: string, message: NetworkMessage): void {
-    const targetNode = this.nodes.get(targetId);
-    if (!targetNode) return;
-
-    // Check if already received
-    if (targetNode.receivedMessages.has(message.id)) return;
-
-    // Mark as received
-    targetNode.receivedMessages.add(message.id);
-
-    // Trigger callback if set
-    if (targetNode.onMessageReceived) {
-      targetNode.onMessageReceived(message);
-    }
-
-    // Forward to other neighbors (gossip propagation)
-    if (message.ttl > 1) {
-      const forwardMessage = { ...message, ttl: message.ttl - 1 };
-      const selectedNeighbors = this.getRandomNeighbors(
-        targetId,
-        this.config.fanoutSize,
-      );
-
-      for (const neighborId of selectedNeighbors) {
-        // Don't send back to sender
-        if (neighborId !== message.senderId) {
-          this.forwardMessage(neighborId, forwardMessage);
-        }
-      }
-    }
-  }
-
-  // Forward message without triggering callback (for propagation)
-  private forwardMessage(targetId: string, message: NetworkMessage): void {
-    const targetNode = this.nodes.get(targetId);
-    if (!targetNode) return;
-
-    // Check if already received
-    if (targetNode.receivedMessages.has(message.id)) return;
-
-    // Mark as received
-    targetNode.receivedMessages.add(message.id);
-
-    // Trigger callback if set
-    if (targetNode.onMessageReceived) {
-      targetNode.onMessageReceived(message);
-    }
-
-    // Continue forwarding if TTL allows
-    if (message.ttl > 1) {
-      const forwardMessage = { ...message, ttl: message.ttl - 1 };
-      const selectedNeighbors = this.getRandomNeighbors(
-        targetId,
-        this.config.fanoutSize,
-      );
-
-      for (const neighborId of selectedNeighbors) {
-        if (neighborId !== message.senderId && neighborId !== targetId) {
-          this.forwardMessage(neighborId, forwardMessage);
-        }
-      }
-    }
-  }
-
-  // Broadcast transaction using gossip
   public broadcastTransaction(
     senderId: string,
     transaction: TransactionPayload,
@@ -293,7 +269,6 @@ export class GossipProtocol {
     return this.broadcast(senderId, "TRANSACTION", transaction);
   }
 
-  // Broadcast block using gossip
   public broadcastBlock(
     senderId: string,
     block: BlockPayload,
@@ -313,7 +288,6 @@ export class GossipProtocol {
     return this.broadcast(senderId, "BLOCK", block);
   }
 
-  // Discover new neighbors for a node
   public discoverNeighbors(nodeId: string): void {
     const node = this.nodes.get(nodeId);
     if (!node) return;
@@ -322,20 +296,16 @@ export class GossipProtocol {
       (id) => id !== nodeId,
     );
     const currentNeighbors = Array.from(node.neighbors);
-
-    // Find nodes that aren't neighbors yet
     const nonNeighbors = allNodeIds.filter(
       (id) => !currentNeighbors.includes(id),
     );
 
     if (nonNeighbors.length === 0) return;
 
-    // Add new random neighbor if under limit
     if (node.neighbors.size < this.config.maxNeighbors) {
       const newNeighbor =
         nonNeighbors[Math.floor(Math.random() * nonNeighbors.length)];
       node.neighbors.add(newNeighbor);
-
       const neighborNode = this.nodes.get(newNeighbor);
       if (
         neighborNode &&
@@ -353,7 +323,14 @@ export class GossipProtocol {
     this.config.fanoutSize = fanoutSize;
   }
 
-  // Get network topology info
+  public setPropagationDelay(ms: number): void {
+    this.config.propagationDelayMs = Math.max(0, ms);
+  }
+
+  public getMetrics(): GossipMetrics {
+    return { ...this.metrics };
+  }
+
   public getNetworkTopology(): {
     nodeId: string;
     neighborCount: number;
@@ -366,9 +343,16 @@ export class GossipProtocol {
     }));
   }
 
-  // Clear all nodes and messages
   public reset(): void {
     this.nodes.clear();
-    this.messageCallbacks.clear();
+    this.metrics = {
+      messagesSent: 0,
+      messagesDeduped: 0,
+      messagesDelivered: 0,
+      averageHops: 0,
+      totalHops: 0,
+      deliveriesTracked: 0,
+    };
+    this.messageHops.clear();
   }
 }
